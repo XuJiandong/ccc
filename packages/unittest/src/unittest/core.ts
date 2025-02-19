@@ -69,11 +69,11 @@ export type TxFile = {
 };
 
 /**
- * Parses the run result from the given stdout output.
- * Assumes that the desired result is located on the third-to-last line of the output,
+ * Parses the error code from the given stdout output.
+ * Assumes that the desired error code is located on the third-to-last line of the output,
  * in the format `Result: <value>`.
  * @param stdout - The stdout output as a string.
- * @returns The parsed integer value from the run result.
+ * @returns The parsed integer value from the error code.
  */
 export function parseRunResult(stdout: string): number {
   return parseInt(stdout.split("\n").at(-3)!.split(":")[1].slice(1));
@@ -90,6 +90,43 @@ export function parseAllCycles(stdout: string): number {
   return parseInt(
     stdout.split("\n").at(-2)!.split(":")[1].slice(1).split("(")[0],
   );
+}
+
+export class ScriptVerificationResult {
+  constructor(
+    public groupType: "lock" | "type",
+    public cellType: "input" | "output",
+    public index: number,
+    public spawnReturn: SpawnSyncReturns<Buffer>,
+  ) {}
+
+  get status() {
+    return this.spawnReturn.status;
+  }
+
+  get stdout() {
+    return this.spawnReturn.stdout.toString();
+  }
+
+  get stderr() {
+    return this.spawnReturn.stderr.toString();
+  }
+
+  get stdoutCycles() {
+    return parseAllCycles(this.stdout);
+  }
+
+  get runResult() {
+    return parseRunResult(this.stdout);
+  }
+
+  reportSummary() {
+    console.log(`--------------------------------------------
+${this.cellType} ${this.groupType} script at index(${this.index}):
+[stdout] ${this.stdout}
+[stderr] ${this.stderr}
+--------------------------------------------`);
+  }
 }
 
 // Resource class manages CKB resources, including Cells and block headers.
@@ -125,7 +162,12 @@ export class Resource {
    * @param type - Optional type script for the Cell.
    * @returns A CellMeta object representing the newly created Cell.
    */
-  createCell(capacity: Num, lock: Script, data: Hex, type?: Script): CellMeta {
+  createCell(
+    lock: Script,
+    data: Hex = "0x",
+    type?: Script,
+    capacity: Num = numFrom(0),
+  ): CellMeta {
     const cellOutPoint = new OutPoint(
       this.cellOutpointHash,
       this.cellOutpointIncr,
@@ -208,7 +250,7 @@ export class Resource {
    * Creates a Script with a type ID, incrementing the type ID for each call.
    * @returns A Script object representing the type ID.
    */
-  createScriptTypeID() {
+  createScriptTypeID(): Script {
     const args = hexFrom(numBeToBytes(this.typeidIncr, 32));
     this.typeidIncr += numFrom(1);
     return new Script(
@@ -219,8 +261,12 @@ export class Resource {
   }
 
   /**
-   * Creates a "dummy" or unused Script.
-   * @returns A Script object that is unused (typically for placeholder purposes).
+   * Creates a placeholder Script with a zero code hash and empty args.
+   * @remarks
+   * This script is intended for testing purposes only and should not be used in real transactions.
+   * It is primarily used as a placeholder lock script for cell_deps where the actual script execution
+   * is not needed.
+   * @returns A non-executable Script object with zero code hash
    */
   createScriptUnused(): Script {
     return new Script(
@@ -236,7 +282,7 @@ export class Resource {
    * @returns A CellMeta object representing the deployed Cell.
    */
   deployCell(data: Hex): CellMeta {
-    return this.createCell(numFrom(0), this.createScriptUnused(), data);
+    return this.createCell(this.createScriptUnused(), data);
   }
 }
 
@@ -263,7 +309,7 @@ export class Verifier {
    * Converts the transaction into a TxFile format.
    * @returns A TxFile object containing the transaction and mock information.
    */
-  txfile(): TxFile {
+  txFile(): TxFile {
     const r: TxFile = {
       mock_info: {
         inputs: [],
@@ -305,15 +351,32 @@ export class Verifier {
   }
 
   /**
-   * Verifies that the transaction fails the verification.
-   * Asserts that the verification process identifies the failure status.
+   * Verifies that the transaction fails verification and optionally checks for a specific error code.
+   * @param expectedErrorCode - Optional. If provided, asserts that the verification fails with this specific error code.
+   * @throws {AssertionError} If expectedErrorCode is provided and the actual error code doesn't match,
+   *                          or if no verification failure occurs when one is expected.
    */
-  verifyFailure() {
-    assert(
-      this.verify().filter((e) => {
-        return e.status == 0xfe;
-      }).length != 0,
-    );
+  verifyFailure(expectedErrorCode?: number) {
+    const runResults = this.verify();
+    for (const e of runResults) {
+      if (e.status != 0) {
+        if (expectedErrorCode === undefined) {
+          return;
+        }
+
+        if (e.runResult != expectedErrorCode) {
+          console.log(
+            `The expected error code is ${expectedErrorCode} but got ${e.runResult}`,
+          );
+          e.reportSummary();
+          assert.fail(
+            `Transaction verification failed not as expected. See details above.`,
+          );
+        } else {
+          return;
+        }
+      }
+    }
   }
 
   /**
@@ -321,11 +384,13 @@ export class Verifier {
    * Asserts that no failure status is found during the verification.
    */
   verifySuccess() {
-    assert(
-      this.verify().filter((e) => {
-        return e.status != 0x00;
-      }).length == 0,
-    );
+    const runResults = this.verify();
+    for (const e of runResults) {
+      if (e.status != 0) {
+        e.reportSummary();
+        assert.fail("Transaction verification failed. See details above.");
+      }
+    }
   }
 
   /**
@@ -333,31 +398,58 @@ export class Verifier {
    * This method spawns a new process for each input/output in the transaction and checks for errors.
    * @returns An array of results from the debugger tool (contains information about verification status).
    */
-  verify(): SpawnSyncReturns<Buffer>[] {
-    const txfile = JSON.stringify(this.txfile());
+  verify(): ScriptVerificationResult[] {
+    const txFile = JSON.stringify(this.txFile());
     const config: SpawnSyncOptionsWithBufferEncoding = {
-      input: txfile,
+      input: txFile,
     };
-    const result: SpawnSyncReturns<Buffer>[] = [];
+    const result: ScriptVerificationResult[] = [];
+    // only run the first script in same group, according to the CKB cell model
+    const lockGroup: Set<Hex> = new Set();
+    const typeGroup: Set<Hex> = new Set();
     for (const [i, e] of this.tx.inputs.entries()) {
+      const cellMeta = this.resource.cell.get(e.previousOutput)!;
+      // skip lock script in same group
+      const lockHash = cellMeta.cellOutput.lock.hash();
+      if (lockGroup.has(lockHash)) {
+        continue;
+      }
+      lockGroup.add(lockHash);
+
       const argsLockPath = `--tx-file - --cell-type input  --script-group-type lock --cell-index ${i}`;
       const argsLock = this.args.slice().concat(argsLockPath.split(" "));
-      result.push(spawnSync(this.debugger, argsLock, config));
-      const cellMeta = this.resource.cell.get(e.previousOutput)!;
+      const result1 = spawnSync(this.debugger, argsLock, config);
+      result.push(new ScriptVerificationResult("lock", "input", i, result1));
+
       if (!cellMeta.cellOutput.type) {
         continue;
       }
+      // skip type script in same group
+      const typeHash = cellMeta.cellOutput.type.hash();
+      if (typeGroup.has(typeHash)) {
+        continue;
+      }
+      typeGroup.add(typeHash);
+
       const argsTypePath = `--tx-file - --cell-type input  --script-group-type type --cell-index ${i}`;
       const argsType = this.args.slice().concat(argsTypePath.split(" "));
-      result.push(spawnSync(this.debugger, argsType, config));
+      const result2 = spawnSync(this.debugger, argsType, config);
+      result.push(new ScriptVerificationResult("type", "input", i, result2));
     }
     for (const [i, e] of this.tx.outputs.entries()) {
       if (!e.type) {
         continue;
       }
+      // skip type script in same group
+      const typeHash = e.type.hash();
+      if (typeGroup.has(typeHash)) {
+        continue;
+      }
+      typeGroup.add(typeHash);
       const argsTypePath = `--tx-file - --cell-type output --script-group-type type --cell-index ${i}`;
       const argsType = this.args.slice().concat(argsTypePath.split(" "));
-      result.push(spawnSync(this.debugger, argsType, config));
+      const result1 = spawnSync(this.debugger, argsType, config);
+      result.push(new ScriptVerificationResult("type", "output", i, result1));
     }
     return result;
   }

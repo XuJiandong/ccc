@@ -1,4 +1,4 @@
-import { hexFrom, numFrom, Transaction } from "@ckb-ccc/core";
+import { hexFrom, Transaction } from "@ckb-ccc/core";
 import assert from "assert";
 import { readFileSync } from "fs";
 import {
@@ -16,14 +16,11 @@ describe("example", () => {
     const tx = Transaction.default();
 
     const cellMetaLock = resource.createCell(
-      numFrom(0),
       resource.createScriptUnused(),
       hexFrom(readFileSync(DEFAULT_SCRIPT_ALWAYS_SUCCESS)),
     );
     const cellMetaI = resource.createCell(
-      numFrom(0),
       resource.createScriptByData(cellMetaLock, "0x"),
-      "0x",
     );
     tx.cellDeps.push(resource.createCellDep(cellMetaLock, "code"));
     tx.inputs.push(resource.createCellInput(cellMetaI));
@@ -37,14 +34,11 @@ describe("example", () => {
     const tx = Transaction.default();
 
     const cellMetaLock = resource.createCell(
-      numFrom(0),
       resource.createScriptUnused(),
       hexFrom(readFileSync(DEFAULT_SCRIPT_ALWAYS_FAILURE)),
     );
     const cellMetaI = resource.createCell(
-      numFrom(0),
       resource.createScriptByData(cellMetaLock, "0x"),
-      "0x",
     );
     tx.cellDeps.push(resource.createCellDep(cellMetaLock, "code"));
     tx.inputs.push(resource.createCellInput(cellMetaI));
@@ -58,14 +52,11 @@ describe("example", () => {
     const tx = Transaction.default();
 
     const cellMetaLock = resource.createCell(
-      numFrom(0),
       resource.createScriptUnused(),
       hexFrom(readFileSync(DEFAULT_SCRIPT_ALWAYS_FAILURE)),
     );
     const cellMetaI = resource.createCell(
-      numFrom(0),
       resource.createScriptByData(cellMetaLock, "0x"),
-      "0x",
     );
     tx.cellDeps.push(resource.createCellDep(cellMetaLock, "code"));
     tx.inputs.push(resource.createCellInput(cellMetaI));

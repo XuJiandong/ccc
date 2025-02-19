@@ -1,19 +1,39 @@
 import {
+  Cell,
   CellDep,
+  CellDepInfoLike,
   CellInput,
   CellOutput,
+  Client,
+  ClientBlock,
+  ClientBlockHeader,
+  ClientFindCellsResponse,
+  ClientFindTransactionsGroupedResponse,
+  ClientFindTransactionsResponse,
+  ClientIndexerSearchKeyLike,
+  ClientIndexerSearchKeyTransactionLike,
+  ClientTransactionResponse,
   DepType,
   hashCkb,
   Hex,
   hexFrom,
+  HexLike,
+  KnownScript,
   Num,
   numBeToBytes,
   numFrom,
+  NumLike,
   OutPoint,
+  OutPointLike,
+  OutputsValidator,
   Script,
+  ScriptInfo,
+  ScriptLike,
   Transaction,
+  TransactionLike,
 } from "@ckb-ccc/core";
 import {
+  ClientCollectableSearchKeyLike,
   JsonRpcBlockHeader,
   JsonRpcCellDep,
   JsonRpcCellInput,
@@ -28,41 +48,43 @@ import {
   SpawnSyncReturns,
 } from "child_process";
 
-// CellMeta defines the data structure that stores information about a Cell.
-export type CellMeta = {
-  outPoint: OutPoint;
-  cellOutput: CellOutput;
-  data: Hex;
-  dataHash: Hex;
-};
-
-// MockInfoInput defines the metadata for a transaction input.
+/**
+ * Defines the metadata for a transaction input.
+ */
 export type MockInfoInput = {
   input: JsonRpcCellInput;
   output: JsonRpcCellOutput;
   data: Hex;
 };
 
-// MockInfoCellDep defines the metadata for a Cell dependency in the transaction.
+/**
+ * Defines the metadata for a Cell dependency in the transaction.
+ */
 export type MockInfoCellDep = {
   cell_dep: JsonRpcCellDep;
   output: JsonRpcCellOutput;
   data: Hex;
 };
 
-// MockInfoHeaderDep defines a block header dependency.
+/**
+ * Defines a block header dependency.
+ */
 export type MockInfoHeaderDep = JsonRpcBlockHeader;
 
-// MockInfo is the overall structure that holds transaction metadata including
-// inputs, cell dependencies, and header dependencies.
+/**
+ * The overall structure that holds transaction metadata including
+ * inputs, cell dependencies, and header dependencies.
+ */
 export type MockInfo = {
   inputs: MockInfoInput[];
   cell_deps: MockInfoCellDep[];
   header_deps: MockInfoHeaderDep[];
 };
 
-// TxFile defines the structure of a transaction file, containing mock
-// information and the actual transaction.
+/**
+ * Defines the structure of a transaction file, containing mock
+ * information and the actual transaction.
+ */
 export type TxFile = {
   mock_info: MockInfo;
   tx: JsonRpcTransaction;
@@ -121,33 +143,32 @@ export class ScriptVerificationResult {
   }
 
   reportSummary() {
-    console.log(`--------------------------------------------
-${this.cellType} ${this.groupType} script at index(${this.index}):
-[stdout] ${this.stdout}
-[stderr] ${this.stderr}
---------------------------------------------`);
+    console.log(`
+╔════════════════════════════════════════════════════════
+║ Script Verification Summary
+║ Type: ${this.cellType} ${this.groupType} script
+║ Index: ${this.index}
+╠════════════════════════════════════════════════════════
+║ STDOUT:
+║ ${this.stdout.trim().split("\n").join("\n║ ")}
+╠════════════════════════════════════════════════════════
+║ STDERR:
+║ ${this.stderr.trim().split("\n").join("\n║ ")}
+╚════════════════════════════════════════════════════════
+`);
   }
 }
 
 // Resource class manages CKB resources, including Cells and block headers.
 export class Resource {
-  cell: Map<OutPoint, CellMeta>;
-  cellOutpointHash: Hex;
-  cellOutpointIncr: Num;
-  header: Map<Hex, MockInfoHeaderDep>;
-  headerIncr: Num;
-  typeidIncr: Num;
-
-  // Constructor initializes all the resources.
-  constructor() {
-    this.cell = new Map();
-    this.cellOutpointHash =
-      "0x0000000000000000000000000000000000000000000000000000000000000000";
-    this.cellOutpointIncr = numFrom(0);
-    this.header = new Map();
-    this.headerIncr = numFrom(0);
-    this.typeidIncr = numFrom(0);
-  }
+  constructor(
+    public cells: Map<OutPoint, Cell> = new Map(),
+    public cellOutpointHash: Hex = "0x0000000000000000000000000000000000000000000000000000000000000000",
+    public cellOutpointIncr: Num = numFrom(0),
+    public header: Map<Hex, MockInfoHeaderDep> = new Map(),
+    public headerIncr: Num = numFrom(0),
+    public typeidIncr: Num = numFrom(0),
+  ) {}
 
   // Static method to return a default Resource instance.
   static default(): Resource {
@@ -160,47 +181,42 @@ export class Resource {
    * @param lock - The lock script to control the ownership of the Cell.
    * @param data - The data to be stored in the Cell.
    * @param type - Optional type script for the Cell.
-   * @returns A CellMeta object representing the newly created Cell.
+   * @returns A cell object representing the newly created Cell.
    */
   createCell(
     lock: Script,
     data: Hex = "0x",
     type?: Script,
     capacity: Num = numFrom(0),
-  ): CellMeta {
+  ): Cell {
     const cellOutPoint = new OutPoint(
       this.cellOutpointHash,
       this.cellOutpointIncr,
     );
     const cellOutput = new CellOutput(capacity, lock, type);
-    const cellMeta = {
-      outPoint: cellOutPoint,
-      cellOutput: cellOutput,
-      data: data,
-      dataHash: hashCkb(data),
-    };
-    this.cell.set(cellOutPoint, cellMeta);
+    const cell = new Cell(cellOutPoint, cellOutput, data);
+    this.cells.set(cellOutPoint, cell);
     this.cellOutpointIncr += numFrom(1);
-    return cellMeta;
+    return cell;
   }
 
   /**
-   * Creates a CellDep (Cell Dependency) for the given CellMeta.
-   * @param cellMeta - The metadata of the Cell.
+   * Creates a CellDep (Cell Dependency) for the given cell.
+   * @param cell - The metadata of the Cell.
    * @param depType - The type of dependency (Code, DepGroup).
    * @returns A CellDep object representing the Cell dependency.
    */
-  createCellDep(cellMeta: CellMeta, depType: DepType): CellDep {
-    return new CellDep(cellMeta.outPoint, depType);
+  createCellDep(cell: Cell, depType: DepType): CellDep {
+    return new CellDep(cell.outPoint, depType);
   }
 
   /**
-   * Creates a CellInput for a given CellMeta.
-   * @param cellMeta - The metadata of the Cell.
+   * Creates a CellInput for a given cell.
+   * @param cell - The metadata of the Cell.
    * @returns A CellInput object representing the input for the transaction.
    */
-  createCellInput(cellMeta: CellMeta): CellInput {
-    return new CellInput(cellMeta.outPoint, numFrom(0));
+  createCellInput(cell: Cell): CellInput {
+    return new CellInput(cell.outPoint, numFrom(0));
   }
 
   /**
@@ -228,22 +244,22 @@ export class Resource {
 
   /**
    * Creates a Script based on data and its associated dataHash.
-   * @param cellMeta - The metadata of the Cell.
+   * @param cell - The metadata of the Cell.
    * @param args - The arguments to be used in the script.
    * @returns A Script object.
    */
-  createScriptByData(cellMeta: CellMeta, args: Hex): Script {
-    return new Script(cellMeta.dataHash, "data2", args);
+  createScriptByData(cell: Cell, args: Hex): Script {
+    return new Script(hashCkb(cell.outputData), "data2", args);
   }
 
   /**
    * Creates a Script based on the type of the Cell.
-   * @param cellMeta - The metadata of the Cell.
+   * @param cell - The metadata of the Cell.
    * @param args - The arguments to be used in the script.
    * @returns A Script object.
    */
-  createScriptByType(cellMeta: CellMeta, args: Hex): Script {
-    return new Script(cellMeta.cellOutput.type!.hash(), "type", args);
+  createScriptByType(cell: Cell, args: Hex): Script {
+    return new Script(cell.cellOutput.type!.hash(), "type", args);
   }
 
   /**
@@ -279,10 +295,318 @@ export class Resource {
   /**
    * Deploys a new Cell with given data, using an unused lock script and zero capacity.
    * @param data - The data to be stored in the deployed Cell.
-   * @returns A CellMeta object representing the deployed Cell.
+   * @returns A cell object representing the deployed Cell.
    */
-  deployCell(data: Hex): CellMeta {
+  deployCell(data: Hex): Cell {
     return this.createCell(this.createScriptUnused(), data);
+  }
+}
+
+/**
+ * A minimal CKB client implementation for unit testing purposes.
+ * This client only implements the `getCell` method and rejects all other client operations.
+ * It is primarily used for testing scenarios where only cell resolution is needed.
+ *
+ * @example
+ * ```typescript
+ * const sigHashAll = await tx.getSignHashInfo(
+ *   lockScript,
+ *   new UnitTestClient(resource)
+ * );
+ * ```
+ */
+export class UnitTestClient extends Client {
+  constructor(public resource: Resource) {
+    super();
+  }
+
+  get url(): string {
+    return "";
+  }
+
+  get addressPrefix(): string {
+    return "";
+  }
+
+  getKnownScript(_script: KnownScript): Promise<ScriptInfo> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getFeeRateStatistics(
+    _blockRange?: NumLike,
+  ): Promise<{ mean: Num; median: Num }> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getFeeRate(
+    _blockRange?: NumLike,
+    _options?: { maxFeeRate?: NumLike },
+  ): Promise<Num> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getTip(): Promise<Num> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getTipHeader(_verbosity?: number | null): Promise<ClientBlockHeader> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getBlockByNumber(
+    _blockNumber: NumLike,
+    _verbosity?: number | null,
+    _withCycles?: boolean | null,
+  ): Promise<ClientBlock | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getBlockByHash(
+    _blockHash: HexLike,
+    _verbosity?: number | null,
+    _withCycles?: boolean | null,
+  ): Promise<ClientBlock | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getHeaderByNumber(
+    _blockNumber: NumLike,
+    _verbosity?: number | null,
+  ): Promise<ClientBlockHeader | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getHeaderByHash(
+    _blockHash: HexLike,
+    _verbosity?: number | null,
+  ): Promise<ClientBlockHeader | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  estimateCycles(_transaction: TransactionLike): Promise<Num> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  sendTransactionDry(
+    _transaction: TransactionLike,
+    _validator?: OutputsValidator,
+  ): Promise<Num> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  sendTransactionNoCache(
+    _transaction: TransactionLike,
+    _validator?: OutputsValidator,
+  ): Promise<Hex> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getTransactionNoCache(
+    _txHash: HexLike,
+  ): Promise<ClientTransactionResponse | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  async getCell(outPointLike: OutPointLike): Promise<Cell | undefined> {
+    const cell = this.resource.cells.get(OutPoint.from(outPointLike));
+    if (!cell) {
+      return;
+    }
+    return cell;
+  }
+
+  getCellLiveNoCache(
+    _outPointLike: OutPointLike,
+    _withData?: boolean | null,
+    _includeTxPool?: boolean | null,
+  ): Promise<Cell | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getCellLive(
+    _outPointLike: OutPointLike,
+    _withData?: boolean | null,
+    _includeTxPool?: boolean | null,
+  ): Promise<Cell | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  findCellsPagedNoCache(
+    _key: ClientIndexerSearchKeyLike,
+    _order?: "asc" | "desc",
+    _limit?: NumLike,
+    _after?: string,
+  ): Promise<ClientFindCellsResponse> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+  async findCellsPaged(
+    _key: ClientIndexerSearchKeyLike,
+    _order?: "asc" | "desc",
+    _limit?: NumLike,
+    _after?: string,
+  ): Promise<ClientFindCellsResponse> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  findCellsOnChain(
+    _key: ClientIndexerSearchKeyLike,
+    _order?: "asc" | "desc",
+    _limit = 10,
+  ): AsyncGenerator<Cell> {
+    throw new Error("Not implemented");
+  }
+
+  findCells(
+    _keyLike: ClientCollectableSearchKeyLike,
+    _order?: "asc" | "desc",
+    _limit = 10,
+  ): AsyncGenerator<Cell> {
+    throw new Error("Not implemented");
+  }
+
+  findCellsByLock(
+    _lock: ScriptLike,
+    _type?: ScriptLike | null,
+    _withData = true,
+    _order?: "asc" | "desc",
+    _limit = 10,
+  ): AsyncGenerator<Cell> {
+    throw new Error("Not implemented");
+  }
+
+  findCellsByType(
+    _type: ScriptLike,
+    _withData = true,
+    _order?: "asc" | "desc",
+    _limit = 10,
+  ): AsyncGenerator<Cell> {
+    throw new Error("Not implemented");
+  }
+
+  async findSingletonCellByType(
+    _type: ScriptLike,
+    _withData = false,
+  ): Promise<Cell | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  async getCellDeps(
+    ..._cellDepsInfoLike: (CellDepInfoLike | CellDepInfoLike[])[]
+  ): Promise<CellDep[]> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  findTransactionsPaged(
+    key: Omit<ClientIndexerSearchKeyTransactionLike, "groupByTransaction"> & {
+      groupByTransaction: true;
+    },
+    order?: "asc" | "desc",
+    limit?: NumLike,
+    after?: string,
+  ): Promise<ClientFindTransactionsGroupedResponse>;
+  findTransactionsPaged(
+    key: Omit<ClientIndexerSearchKeyTransactionLike, "groupByTransaction"> & {
+      groupByTransaction?: false | null;
+    },
+    order?: "asc" | "desc",
+    limit?: NumLike,
+    after?: string,
+  ): Promise<ClientFindTransactionsResponse>;
+  findTransactionsPaged(
+    _key: ClientIndexerSearchKeyTransactionLike,
+    _order?: "asc" | "desc",
+    _limit?: NumLike,
+    _after?: string,
+  ): Promise<
+    ClientFindTransactionsResponse | ClientFindTransactionsGroupedResponse
+  > {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  getCellsCapacity(_key: ClientIndexerSearchKeyLike): Promise<Num> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  async getBalanceSingle(_lock: ScriptLike): Promise<Num> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  async getBalance(_locks: ScriptLike[]): Promise<Num> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  async sendTransaction(
+    _transaction: TransactionLike,
+    _validator?: OutputsValidator,
+    _options?: { maxFeeRate?: NumLike },
+  ): Promise<Hex> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  async getTransaction(
+    _txHashLike: HexLike,
+  ): Promise<ClientTransactionResponse | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  async waitTransaction(
+    _txHash: HexLike,
+    _confirmations: number = 0,
+    _timeout: number = 60000,
+    _interval: number = 2000,
+  ): Promise<ClientTransactionResponse | undefined> {
+    return Promise.reject(new Error("Not implemented"));
+  }
+
+  findTransactionsByLock(
+    lock: ScriptLike,
+    type: ScriptLike | null | undefined,
+    groupByTransaction: true,
+    order?: "asc" | "desc",
+    limit?: number,
+  ): AsyncGenerator<ClientFindTransactionsGroupedResponse["transactions"][0]>;
+  findTransactionsByLock(
+    lock: ScriptLike,
+    type?: ScriptLike | null,
+    groupByTransaction?: false | null,
+    order?: "asc" | "desc",
+    limit?: number,
+  ): AsyncGenerator<ClientFindTransactionsResponse["transactions"][0]>;
+  findTransactionsByLock(
+    _lock: ScriptLike,
+    _type?: ScriptLike | null,
+    _groupByTransaction?: boolean | null,
+    _order?: "asc" | "desc",
+    _limit = 10,
+  ): AsyncGenerator<
+    | ClientFindTransactionsResponse["transactions"][0]
+    | ClientFindTransactionsGroupedResponse["transactions"][0]
+  > {
+    throw new Error("Not implemented");
+  }
+
+  findTransactionsByType(
+    type: ScriptLike,
+    groupByTransaction: true,
+    order?: "asc" | "desc",
+    limit?: number,
+  ): AsyncGenerator<ClientFindTransactionsGroupedResponse["transactions"][0]>;
+  findTransactionsByType(
+    type: ScriptLike,
+    groupByTransaction?: false | null,
+    order?: "asc" | "desc",
+    limit?: number,
+  ): AsyncGenerator<ClientFindTransactionsResponse["transactions"][0]>;
+  findTransactionsByType(
+    _type: ScriptLike,
+    _groupByTransaction?: boolean | null,
+    _order?: "asc" | "desc",
+    _limit = 10,
+  ): AsyncGenerator<
+    | ClientFindTransactionsResponse["transactions"][0]
+    | ClientFindTransactionsGroupedResponse["transactions"][0]
+  > {
+    throw new Error("Not implemented");
   }
 }
 
@@ -321,24 +645,24 @@ export class Verifier {
 
     // Add cell dependencies to the mock info.
     for (const e of this.tx.cellDeps) {
-      const cellMeta = this.resource.cell.get(e.outPoint)!;
+      const cell = this.resource.cells.get(e.outPoint)!;
       r.mock_info.cell_deps.push({
         cell_dep: {
-          out_point: JsonRpcTransformers.outPointFrom(cellMeta.outPoint),
+          out_point: JsonRpcTransformers.outPointFrom(cell.outPoint),
           dep_type: JsonRpcTransformers.depTypeFrom(e.depType),
         },
-        output: JsonRpcTransformers.cellOutputFrom(cellMeta.cellOutput),
-        data: cellMeta.data,
+        output: JsonRpcTransformers.cellOutputFrom(cell.cellOutput),
+        data: cell.outputData,
       });
     }
 
     // Add inputs to the mock info.
     for (const e of this.tx.inputs) {
-      const cellMeta = this.resource.cell.get(e.previousOutput)!;
+      const cell = this.resource.cells.get(e.previousOutput)!;
       r.mock_info.inputs.push({
         input: JsonRpcTransformers.cellInputFrom(e),
-        output: JsonRpcTransformers.cellOutputFrom(cellMeta.cellOutput),
-        data: cellMeta.data,
+        output: JsonRpcTransformers.cellOutputFrom(cell.cellOutput),
+        data: cell.outputData,
       });
     }
 
@@ -365,18 +689,18 @@ export class Verifier {
         }
 
         if (e.runResult != expectedErrorCode) {
-          console.log(
-            `The expected error code is ${expectedErrorCode} but got ${e.runResult}`,
-          );
           e.reportSummary();
           assert.fail(
-            `Transaction verification failed not as expected. See details above.`,
+            `Transaction verification failed with unexpected error code: expected ${expectedErrorCode}, got ${e.runResult}. See details above.`,
           );
         } else {
           return;
         }
       }
     }
+    assert.fail(
+      `Transaction verification failed. No verification failure occurred.`,
+    );
   }
 
   /**
@@ -408,9 +732,9 @@ export class Verifier {
     const lockGroup: Set<Hex> = new Set();
     const typeGroup: Set<Hex> = new Set();
     for (const [i, e] of this.tx.inputs.entries()) {
-      const cellMeta = this.resource.cell.get(e.previousOutput)!;
+      const cell = this.resource.cells.get(e.previousOutput)!;
       // skip lock script in same group
-      const lockHash = cellMeta.cellOutput.lock.hash();
+      const lockHash = cell.cellOutput.lock.hash();
       if (lockGroup.has(lockHash)) {
         continue;
       }
@@ -421,11 +745,11 @@ export class Verifier {
       const result1 = spawnSync(this.debugger, argsLock, config);
       result.push(new ScriptVerificationResult("lock", "input", i, result1));
 
-      if (!cellMeta.cellOutput.type) {
+      if (!cell.cellOutput.type) {
         continue;
       }
       // skip type script in same group
-      const typeHash = cellMeta.cellOutput.type.hash();
+      const typeHash = cell.cellOutput.type.hash();
       if (typeGroup.has(typeHash)) {
         continue;
       }

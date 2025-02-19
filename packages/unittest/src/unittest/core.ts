@@ -177,16 +177,16 @@ export class Resource {
 
   /**
    * Creates a new Cell with specified capacity, lock script, data, and optional type.
-   * @param capacity - The capacity (amount) of the Cell.
    * @param lock - The lock script to control the ownership of the Cell.
-   * @param data - The data to be stored in the Cell.
    * @param type - Optional type script for the Cell.
+   * @param data - The data to be stored in the Cell. default is "0x".
+   * @param capacity - The capacity (amount) of the Cell. default is 0.
    * @returns A cell object representing the newly created Cell.
    */
   createCell(
     lock: Script,
-    data: Hex = "0x",
     type?: Script,
+    data: Hex = "0x",
     capacity: Num = numFrom(0),
   ): Cell {
     const cellOutPoint = new OutPoint(
@@ -221,12 +221,16 @@ export class Resource {
 
   /**
    * Creates a CellOutput with specified capacity, lock script, and optional type.
-   * @param capacity - The capacity (amount) of the Cell.
    * @param lock - The lock script for the Cell.
    * @param type - Optional type script for the Cell.
+   * @param capacity - The capacity (amount) of the Cell. default is 0.
    * @returns A CellOutput object.
    */
-  createCellOutput(capacity: Num, lock: Script, type?: Script): CellOutput {
+  createCellOutput(
+    lock: Script,
+    type?: Script,
+    capacity: Num = numFrom(0),
+  ): CellOutput {
     return new CellOutput(capacity, lock, type);
   }
 
@@ -293,12 +297,41 @@ export class Resource {
   }
 
   /**
-   * Deploys a new Cell with given data, using an unused lock script and zero capacity.
-   * @param data - The data to be stored in the deployed Cell.
-   * @returns A cell object representing the deployed Cell.
+   * Deploys a new Cell with given data and adds it as a cell dependency to the transaction.
+   * @param data - The data to be stored in the deployed cell.
+   * @param tx - The transaction to which the cell dependency will be added.
+   * @param isType - If true, creates a type ID script for the cell. If false, uses data hash for script code hash.
+   * @returns A Script object that can be used to reference this deployed cell. The returned script has empty args ("0x")
+   * which should be updated by the caller with appropriate arguments.
+   *
+   * @example
+   * ```typescript
+   * // Deploy cell with data hash based script
+   * const script = resource.deployCell(data, tx, false);
+   * script.args = "0xEEFF"; // Update args as needed
+   *
+   * // Deploy cell with type ID based script
+   * const typeScript = resource.deployCell(data, tx, true);
+   * typeScript.args = "0x0011"; // Update args as needed
+   * ```
    */
-  deployCell(data: Hex): Cell {
-    return this.createCell(this.createScriptUnused(), data);
+  deployCell(data: Hex, tx: Transaction, isType: boolean): Script {
+    let typeScript = undefined;
+    if (isType) {
+      typeScript = this.createScriptTypeID();
+    }
+
+    const deployedCell = this.createCell(
+      this.createScriptUnused(),
+      typeScript,
+      data,
+    );
+    tx.cellDeps.push(this.createCellDep(deployedCell, "code"));
+    if (isType) {
+      return this.createScriptByType(deployedCell, "0x");
+    } else {
+      return this.createScriptByData(deployedCell, "0x");
+    }
   }
 }
 

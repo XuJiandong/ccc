@@ -16,16 +16,26 @@ describe("example", () => {
     const resource = Resource.default();
     const tx = Transaction.default();
 
-    const cellMetaLock = resource.createCell(
-      resource.createScriptUnused(),
+    // deploy a cell with risc-v binary, return a script.
+    const lockScript = resource.deployCell(
       hexFrom(readFileSync(DEFAULT_SCRIPT_ALWAYS_SUCCESS)),
+      tx,
+      false,
     );
-    const cellMetaI = resource.createCell(
-      resource.createScriptByData(cellMetaLock, "0x"),
-    );
-    tx.cellDeps.push(resource.createCellDep(cellMetaLock, "code"));
-    tx.inputs.push(resource.createCellInput(cellMetaI));
+    // update args
+    lockScript.args = "0xEEFF";
 
+    // create a input cell with the created script as lock script
+    const inputCell = resource.createCell(lockScript);
+
+    // add input cell to the transaction
+    tx.inputs.push(resource.createCellInput(inputCell));
+    // add output cell to the transaction
+    tx.outputs.push(resource.createCellOutput(lockScript));
+    // add output data to the transaction
+    tx.outputsData.push(hexFrom("0x"));
+
+    // verify the transaction
     const verifier = Verifier.from(resource, tx);
     verifier.verifySuccess();
   });
@@ -34,15 +44,13 @@ describe("example", () => {
     const resource = Resource.default();
     const tx = Transaction.default();
 
-    const cellMetaLock = resource.createCell(
-      resource.createScriptUnused(),
+    const lockScript = resource.deployCell(
       hexFrom(readFileSync(DEFAULT_SCRIPT_ALWAYS_FAILURE)),
+      tx,
+      false,
     );
-    const cellMetaI = resource.createCell(
-      resource.createScriptByData(cellMetaLock, "0x"),
-    );
-    tx.cellDeps.push(resource.createCellDep(cellMetaLock, "code"));
-    tx.inputs.push(resource.createCellInput(cellMetaI));
+    const inputCell = resource.createCell(lockScript);
+    tx.inputs.push(resource.createCellInput(inputCell));
 
     const verifier = Verifier.from(resource, tx);
     verifier.verifyFailure();
@@ -53,15 +61,13 @@ describe("example", () => {
     const resource = Resource.default();
     const tx = Transaction.default();
 
-    const cellMetaLock = resource.createCell(
-      resource.createScriptUnused(),
+    const lockScript = resource.deployCell(
       hexFrom(readFileSync(DEFAULT_SCRIPT_ALWAYS_FAILURE)),
+      tx,
+      true,
     );
-    const cellMetaI = resource.createCell(
-      resource.createScriptByData(cellMetaLock, "0x"),
-    );
-    tx.cellDeps.push(resource.createCellDep(cellMetaLock, "code"));
-    tx.inputs.push(resource.createCellInput(cellMetaI));
+    const inputCell = resource.createCell(lockScript);
+    tx.inputs.push(resource.createCellInput(inputCell));
 
     const verifier = Verifier.from(resource, tx);
     const result = verifier.verify()[0];
@@ -73,14 +79,13 @@ describe("example", () => {
     const tx = Transaction.default();
     const client = new UnitTestClient(resource);
 
-    const cellMetaLock = resource.createCell(
-      resource.createScriptUnused(),
+    const lockScript = resource.deployCell(
       hexFrom(readFileSync(DEFAULT_SCRIPT_ALWAYS_SUCCESS)),
+      tx,
+      false,
     );
-    const lockScript = resource.createScriptByData(cellMetaLock, "0x");
-    const cellMetaI = resource.createCell(lockScript);
-    tx.cellDeps.push(resource.createCellDep(cellMetaLock, "code"));
-    tx.inputs.push(resource.createCellInput(cellMetaI));
+    const inputCell = resource.createCell(lockScript);
+    tx.inputs.push(resource.createCellInput(inputCell));
     // the format of witness should follow WitnessArgs
     tx.witnesses.push(
       hexFrom(

@@ -176,14 +176,14 @@ export class Resource {
   }
 
   /**
-   * Creates a new Cell with specified capacity, lock script, data, and optional type.
+   * Mock a new Cell with specified capacity, lock script, data, and optional type.
    * @param lock - The lock script to control the ownership of the Cell.
    * @param type - Optional type script for the Cell.
    * @param data - The data to be stored in the Cell. default is "0x".
    * @param capacity - The capacity (amount) of the Cell. default is 0.
    * @returns A cell object representing the newly created Cell.
    */
-  createCell(
+  mockCell(
     lock: Script,
     type?: Script,
     data: Hex = "0x",
@@ -214,19 +214,45 @@ export class Resource {
    * Creates a CellInput for a given cell.
    * @param cell - The metadata of the Cell.
    * @returns A CellInput object representing the input for the transaction.
+   *
+   * @example
+   * ```typescript
+   * // First mock a cell using mockCell
+   * const lock = new Script("0x...", "data", "0x");
+   * const cell = resource.mockCell(lock, undefined, "0x", 1000n);
+   *
+   * // Then create a cell input from it
+   * const input = Resource.createCellInput(cell);
+   *
+   * // The input can now be used in a transaction
+   * const tx = new Transaction();
+   * tx.inputs.push(input);
+   * ```
    */
-  createCellInput(cell: Cell): CellInput {
+  static createCellInput(cell: Cell): CellInput {
     return new CellInput(cell.outPoint, numFrom(0));
   }
 
   /**
-   * Creates a CellOutput with specified capacity, lock script, and optional type.
+   * Creates a CellOutput with lock script, optional type script and capacities.
    * @param lock - The lock script for the Cell.
    * @param type - Optional type script for the Cell.
    * @param capacity - The capacity (amount) of the Cell. default is 0.
    * @returns A CellOutput object.
+   *
+   * @example
+   * ```typescript
+   * // Create a basic cell output with just a lock script
+   * const lock = new Script("0x...", "data", "0x");
+   * const output = Resource.createCellOutput(lock, undefined, 1000n);
+   *
+   * // The outputs can now be used in a transaction
+   * const tx = new Transaction();
+   * tx.outputsData.push(hexFrom("0x"));
+   * tx.outputs.push(output);
+   * ```
    */
-  createCellOutput(
+  static createCellOutput(
     lock: Script,
     type?: Script,
     capacity: Num = numFrom(0),
@@ -235,11 +261,11 @@ export class Resource {
   }
 
   /**
-   * Creates a new block header dependency and returns its hash.
+   * Mock a new block header dependency and returns its hash.
    * @param header - The block header to be added.
    * @returns The hash of the block header.
    */
-  createHeader(header: MockInfoHeaderDep): Hex {
+  mockHeader(header: MockInfoHeaderDep): Hex {
     header.hash = hexFrom(numBeToBytes(this.headerIncr, 32));
     this.header.set(header.hash, header);
     this.headerIncr += numFrom(1);
@@ -321,7 +347,7 @@ export class Resource {
       typeScript = this.createScriptTypeID();
     }
 
-    const deployedCell = this.createCell(
+    const deployedCell = this.mockCell(
       this.createScriptUnused(),
       typeScript,
       data,

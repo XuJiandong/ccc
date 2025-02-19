@@ -25,13 +25,13 @@ describe("example", () => {
     // update args
     lockScript.args = "0xEEFF";
 
-    // create a input cell with the created script as lock script
-    const inputCell = resource.createCell(lockScript);
+    // mock a input cell with the created script as lock script
+    const inputCell = resource.mockCell(lockScript);
 
     // add input cell to the transaction
-    tx.inputs.push(resource.createCellInput(inputCell));
+    tx.inputs.push(Resource.createCellInput(inputCell));
     // add output cell to the transaction
-    tx.outputs.push(resource.createCellOutput(lockScript));
+    tx.outputs.push(Resource.createCellOutput(lockScript));
     // add output data to the transaction
     tx.outputsData.push(hexFrom("0x"));
 
@@ -49,8 +49,8 @@ describe("example", () => {
       tx,
       false,
     );
-    const inputCell = resource.createCell(lockScript);
-    tx.inputs.push(resource.createCellInput(inputCell));
+    const inputCell = resource.mockCell(lockScript);
+    tx.inputs.push(Resource.createCellInput(inputCell));
 
     const verifier = Verifier.from(resource, tx);
     verifier.verifyFailure();
@@ -66,8 +66,8 @@ describe("example", () => {
       tx,
       true,
     );
-    const inputCell = resource.createCell(lockScript);
-    tx.inputs.push(resource.createCellInput(inputCell));
+    const inputCell = resource.mockCell(lockScript);
+    tx.inputs.push(Resource.createCellInput(inputCell));
 
     const verifier = Verifier.from(resource, tx);
     const result = verifier.verify()[0];
@@ -84,8 +84,8 @@ describe("example", () => {
       tx,
       false,
     );
-    const inputCell = resource.createCell(lockScript);
-    tx.inputs.push(resource.createCellInput(inputCell));
+    const inputCell = resource.mockCell(lockScript);
+    tx.inputs.push(Resource.createCellInput(inputCell));
     // the format of witness should follow WitnessArgs
     tx.witnesses.push(
       hexFrom(

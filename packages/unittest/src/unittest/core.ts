@@ -122,26 +122,73 @@ export class ScriptVerificationResult {
     public spawnReturn: SpawnSyncReturns<Buffer>,
   ) {}
 
+  /**
+   * Gets the process exit status code returned by the ckb-debugger process.
+   *
+   * This status code indicates whether the debugger process itself executed successfully:
+   * - 0: Process completed successfully
+   * - -2: Script verification failed
+   * - Other values: Process encountered other errors
+   *
+   * Note: This status code is different from the script error code returned by the
+   * script execution itself (see {@link scriptErrorCode}).
+   *
+   * @returns The process exit status code
+   */
   get status() {
     return this.spawnReturn.status;
   }
 
+  /**
+   * Gets the stdout output from the ckb-debugger process.
+   *
+   * This output contains detailed information about the script verification process.
+   * It includes the script verification result, cycles, and any additional debug messages.
+   *
+   * @returns The stdout output from the ckb-debugger process
+   */
   get stdout() {
     return this.spawnReturn.stdout.toString();
   }
 
+  /**
+   * Gets the stderr output from the ckb-debugger process.
+   *
+   * This output contains detailed error messages and debugging information.
+   * It is useful for diagnosing issues when the script verification fails.
+   *
+   * @returns The stderr output from the ckb-debugger process
+   */
   get stderr() {
     return this.spawnReturn.stderr.toString();
   }
 
+  /**
+   * Parses the total cycles from the stdout output.
+   * @returns The parsed integer value representing the total cycles.
+   */
   get stdoutCycles() {
     return parseAllCycles(this.stdout);
   }
 
-  get runResult() {
+  /**
+   * Gets the error code returned by the script execution.
+   *
+   * This error code is returned by the script itself during execution and is different
+   * from the `status` code returned by the ckb-debugger process.
+   * The error code is parsed from the stdout output using {@link parseRunResult}.
+   *
+   * @returns The error code returned by the script execution
+   */
+  get scriptErrorCode() {
     return parseRunResult(this.stdout);
   }
 
+  /**
+   * Reports a summary of the script verification process.
+   * This method prints a formatted summary of the script verification results,
+   * including the script type, index, stdout, and stderr outputs.
+   */
   reportSummary() {
     console.log(`
 ╔════════════════════════════════════════════════════════
@@ -159,7 +206,34 @@ export class ScriptVerificationResult {
   }
 }
 
-// Resource class manages CKB resources, including Cells and block headers.
+/**
+ * Manages CKB resources for unit testing, including Cells, block headers, and other on-chain data.
+ *
+ * This class provides mock data for unit tests that require on-chain information but run in an isolated environment.
+ * It maintains collections of:
+ * - Cells: Mock transaction input cells
+ * - Block Headers: Mock block header information
+ * - Cell Dependencies: Mock dependencies required by transactions
+ *
+ * The class offers methods to:
+ * - Create and track mock cells with custom scripts and data
+ * - Generate unique type IDs for type scripts
+ * - Deploy cells with associated scripts
+ * - Create various transaction components (inputs, outputs, deps)
+ *
+ * @example
+ * ```typescript
+ * // Create a new resource manager
+ * const resource = new Resource();
+ *
+ * // Mock a cell with a lock script
+ * const lock = new Script("0x...", "data", "0x");
+ * const cell = resource.mockCell(lock);
+ *
+ * // Create transaction components
+ * const input = Resource.createCellInput(cell);
+ * ```
+ */
 export class Resource {
   constructor(
     public cells: Map<OutPoint, Cell> = new Map(),
@@ -747,10 +821,10 @@ export class Verifier {
           return;
         }
 
-        if (e.runResult != expectedErrorCode) {
+        if (e.scriptErrorCode != expectedErrorCode) {
           e.reportSummary();
           assert.fail(
-            `Transaction verification failed with unexpected error code: expected ${expectedErrorCode}, got ${e.runResult}. See details above.`,
+            `Transaction verification failed with unexpected error code: expected ${expectedErrorCode}, got ${e.scriptErrorCode}. See details above.`,
           );
         } else {
           return;
@@ -758,7 +832,7 @@ export class Verifier {
       }
     }
     assert.fail(
-      `Transaction verification failed. No verification failure occurred.`,
+      `Transaction verification should fail. No verification failure occurred.`,
     );
   }
 

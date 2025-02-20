@@ -38,6 +38,12 @@ describe("example", () => {
     // verify the transaction
     const verifier = Verifier.from(resource, tx);
     verifier.verifySuccess();
+    // turn off console.log
+    jest.spyOn(console, "log").mockImplementation(() => {});
+    expect(() => verifier.verifyFailure()).toThrow(
+      "Transaction verification should fail. No verification failure occurred.",
+    );
+    jest.spyOn(console, "log").mockRestore();
   });
 
   test("alwaysFailure", () => {
@@ -55,6 +61,15 @@ describe("example", () => {
     const verifier = Verifier.from(resource, tx);
     verifier.verifyFailure();
     verifier.verifyFailure(-1);
+    // turn off console.log
+    jest.spyOn(console, "log").mockImplementation(() => {});
+    expect(() => verifier.verifySuccess()).toThrow(
+      "Transaction verification failed. See details above.",
+    );
+    expect(() => verifier.verifyFailure(2)).toThrow(
+      "Transaction verification failed with unexpected error code: expected 2, got -1. See details above.",
+    );
+    jest.spyOn(console, "log").mockRestore();
   });
 
   test("parse", () => {

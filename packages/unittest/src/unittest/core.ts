@@ -849,7 +849,16 @@ export class Verifier {
       }
     }
   }
-
+  static checkSpawnResult(result: SpawnSyncReturns<Buffer>) {
+    if (result.status === 0) {
+      return;
+    }
+    if (result.error?.message.includes("ENOENT")) {
+      throw new Error(
+        "ckb-debugger not found. Please install it first: https://github.com/nervosnetwork/ckb-standalone-debugger",
+      );
+    }
+  }
   /**
    * Runs the verification process on the transaction by calling the debugger tool.
    * This method spawns a new process for each input/output in the transaction and checks for errors.
@@ -876,6 +885,7 @@ export class Verifier {
       const argsLockPath = `--tx-file - --cell-type input  --script-group-type lock --cell-index ${i}`;
       const argsLock = this.args.slice().concat(argsLockPath.split(" "));
       const result1 = spawnSync(this.debugger, argsLock, config);
+      Verifier.checkSpawnResult(result1);
       result.push(new ScriptVerificationResult("lock", "input", i, result1));
 
       if (!cell.cellOutput.type) {
@@ -891,6 +901,7 @@ export class Verifier {
       const argsTypePath = `--tx-file - --cell-type input  --script-group-type type --cell-index ${i}`;
       const argsType = this.args.slice().concat(argsTypePath.split(" "));
       const result2 = spawnSync(this.debugger, argsType, config);
+      Verifier.checkSpawnResult(result2);
       result.push(new ScriptVerificationResult("type", "input", i, result2));
     }
     for (const [i, e] of this.tx.outputs.entries()) {
@@ -906,6 +917,7 @@ export class Verifier {
       const argsTypePath = `--tx-file - --cell-type output --script-group-type type --cell-index ${i}`;
       const argsType = this.args.slice().concat(argsTypePath.split(" "));
       const result1 = spawnSync(this.debugger, argsType, config);
+      Verifier.checkSpawnResult(result1);
       result.push(new ScriptVerificationResult("type", "output", i, result1));
     }
     return result;
